@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# certinfo.sh v2.3
+# certinfo.sh v2.3.1
 # by Ricardo Branco
 #
 # MIT License
@@ -489,7 +489,7 @@ jks2pkcs12 ()
 	# Secure permissions
 	umask 077
 	# Create temp file
-	tmpfile=$(mktemp)
+	tmpfile=$(mktemp -u)
 	trap "/bin/rm -f $tmpfile" EXIT HUP INT QUIT TERM
 
 	if [ -f "$2" ] ; then
@@ -538,7 +538,7 @@ case "$type" in
 	'EC PARAMETERS')
 		print_ecparam "$1" ;;
 	'Java KeyStore')
-		print_keystore "$@"
+		#print_keystore "$@"
 		# Transform the Java Keystore to PKCS#12 for better viewing
 		jks2pkcs12 "$@" ;;
 	'X509 CRL')
