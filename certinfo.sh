@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# certinfo.sh v2.3.1
+# certinfo.sh v2.3.2
 # by Ricardo Branco
 #
 # MIT License
@@ -366,7 +366,7 @@ detect_file ()
 {
 	local firstline
 
-	firstline=$(head -1 "$1")
+	firstline=$(head -1 "$1" | tr -d '\r')
 
 	if [[ $firstline =~ ^-{5}BEGIN\ [A-Z0-9\ ]+-{5}$ ]] ; then
 		# PEM
