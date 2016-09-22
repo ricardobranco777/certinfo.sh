@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# certinfo.sh v2.3.2
+# certinfo.sh v2.3.3
 # by Ricardo Branco
 #
 # MIT License
@@ -69,7 +69,7 @@ check_error ()
 		fi
 	done
 
-	echo "ERROR: Missing binaries: $binaries" 1>&2
+	echo "ERROR: Missing binaries: $binaries" >&2
 	exit_usage
 }
 
@@ -212,7 +212,7 @@ print_pkcs12 ()
 		if [ $# -eq 2 ] ; then
 			if [ -f "$2" ] ; then
 				$keytool -list -v -storetype PKCS12 -keystore "$1" -storepass:file "$2" || \
-				$keytool -list -v -storetype PKCS12 -keystore "$1" -storepass $(cat "$2")
+				$keytool -list -v -storetype PKCS12 -keystore "$1" -storepass $(< "$2")
 			else
 				$keytool -list -v -storetype PKCS12 -keystore "$1" -storepass "$2"
 			fi
@@ -322,7 +322,7 @@ print_server ()
 	local host starttls
 
 	# Strip the initial URL scheme & any trailing slashes, if present
-	host=$(echo "$1" | sed -re 's|^[a-z][a-z0-9\.-]+://||' -e 's|/*$||')
+	host=$(echo "$1" | sed -re 's%^[a-z][a-z0-9\.-]+://%%' -e 's%/*$%%')
 	# Get port
 	[[ $host =~ : ]] && port=${host##*:}
 	# Strip port from host
@@ -469,7 +469,7 @@ print_keystore ()
 	if [ $# -eq 2 ] ; then
 		if [ -f "$2" ] ; then
 			$keytool -list -v -keystore "$1" -storepass:file "$2" || \
-			$keytool -list -v -keystore "$1" -storepass $(cat "$2")
+			$keytool -list -v -keystore "$1" -storepass $(< "$2")
 		else
 			$keytool -list -v -keystore "$1" -storepass "$2"
 		fi
@@ -494,7 +494,7 @@ jks2pkcs12 ()
 
 	if [ -f "$2" ] ; then
 		$keytool -importkeystore -noprompt -srckeystore "$1" -srcstoretype JKS -destkeystore "$tmpfile" -deststoretype PKCS12 -srcstorepass:file "$2" -deststorepass file:"$2" || \
-		$keytool -importkeystore -noprompt -srckeystore "$1" -srcstoretype JKS -destkeystore "$tmpfile" -deststoretype PKCS12 -srcstorepass $(cat "$2") -deststorepass $(cat "$2") || exit 1
+		$keytool -importkeystore -noprompt -srckeystore "$1" -srcstoretype JKS -destkeystore "$tmpfile" -deststoretype PKCS12 -srcstorepass $(< "$2") -deststorepass $(< "$2") || exit 1
 	else
 		$keytool -importkeystore -noprompt -srckeystore "$1" -srcstoretype JKS -destkeystore "$tmpfile" -deststoretype PKCS12 -srcstorepass "$2" -deststorepass "$2" || exit 1
 	fi
