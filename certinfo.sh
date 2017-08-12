@@ -478,7 +478,7 @@ print_keystore ()
 	fi
 }
 
-# Translate JKS (Jave KeyStore) to PKCS#12 for better viewing
+# Translate JKS (Java KeyStore) to PKCS#12 for better viewing
 jks2pkcs12 ()
 {
 	local tmpfile
