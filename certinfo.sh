@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# certinfo.sh v2.3.4
+# certinfo.sh v2.3.5
 # by Ricardo Branco
 #
 # MIT License
@@ -25,7 +25,7 @@ certtool=${certtool:-$(type -P certtool)}
 keytool=${keytool:-$(type -P keytool)}
 # NSS tools
 certutil=${certutil:-$(type -P certutil)}
-pk12tool=${pk12util:-$(type -P pk12util)}
+pk12util=${pk12util:-$(type -P pk12util)}
 # OpenSSH
 ssh_keygen=${ssh_keygen:-$(type -P ssh-keygen)}
 
@@ -198,15 +198,15 @@ print_pkcs12 ()
 		else
 			$certtool --inraw --p12-info --infile "$1"
 		fi
-	elif [ -n "$pk12tool" ] ; then
+	elif [ -n "$pk12util" ] ; then
 		if [ $# -eq 2 ] ; then
 			if [ -f "$2" ] ; then
-				$pk12tool -l "$1" -w "$2"
+				$pk12util -l "$1" -w "$2"
 			else
-				$pk12tool -l "$1" -W "$2"
+				$pk12util -l "$1" -W "$2"
 			fi
 		else
-			$pk12tool -l "$1"
+			$pk12util -l "$1"
 		fi
 	elif [ -n "$keytool" ] ; then
 		if [ $# -eq 2 ] ; then
@@ -220,7 +220,7 @@ print_pkcs12 ()
 			$keytool -list -v -storetype PKCS12 -keystore "$1"
 		fi
 	else
-		check_error openssl certtool pk12tool keytool
+		check_error openssl certtool pk12util keytool
 	fi
 }
 
