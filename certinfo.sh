@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# certinfo.sh v2.3.5
+# certinfo.sh v2.4
 # by Ricardo Branco
 #
 # MIT License
@@ -364,17 +364,17 @@ print_server ()
 
 detect_file ()
 {
-	local firstline
+	local header
 
-	firstline=$(head -1 "$1" | tr -d '\r\0')
+	header=$(cat "$1" | tr -d '\r\0' | egrep -m1 -e '^-{4,5} ?BEGIN [A-Z0-9 ]+ ?-{4,5}$' -e '^(ssh|ecdsa)-[a-z0-9-]+ [A-Za-z0-9/-]+ ?.*$')
 
-	if [[ $firstline =~ ^-{5}BEGIN\ [A-Z0-9\ ]+-{5}$ ]] ; then
+	if [[ $header =~ ^-{5}BEGIN\ [A-Z0-9\ ]+-{5}$ ]] ; then
 		# PEM
-		type=$(echo "$firstline" | sed -re 's/^-{5}BEGIN //' -e 's/-{5}$//')
-	elif [[ $firstline =~ ^-{4}\ BEGIN\ [A-Z0-9\ ]+\ -{4}$ ]] ; then
+		type=$(echo "$header" | sed -re 's/^-{5}BEGIN //' -e 's/-{5}$//')
+	elif [[ $header =~ ^-{4}\ BEGIN\ [A-Z0-9\ ]+\ -{4}$ ]] ; then
 		# RFC-4716 SSH public key format
-		type=$(echo "$firstline" | sed -re 's/^-{4} BEGIN //' -e 's/ -{4}$//')
-	elif [[ $firstline =~ ^(ssh|ecdsa)-[a-z0-9-]+\ [A-Za-z0-9/-]+\ ?.*$ ]] ; then
+		type=$(echo "$header" | sed -re 's/^-{4} BEGIN //' -e 's/ -{4}$//')
+	elif [[ $header =~ ^(ssh|ecdsa)-[a-z0-9-]+\ [A-Za-z0-9/-]+\ ?.*$ ]] ; then
 		# Legacy SSH public key format
 		type="SSH2 PUBLIC KEY"
 	fi
