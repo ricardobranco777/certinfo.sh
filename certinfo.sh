@@ -366,7 +366,7 @@ detect_file ()
 {
 	local header
 
-	header=$(cat "$1" | tr -d '\r\0' | egrep -m1 -e '^-{4,5} ?BEGIN [A-Z0-9 ]+ ?-{4,5}$' -e '^(ssh|ecdsa)-[a-z0-9-]+ [A-Za-z0-9/-]+ ?.*$')
+	header=$(cat "$1" | tr -d '\r\0' | grep -E -m1 -e '^-{4,5} ?BEGIN [A-Z0-9 ]+ ?-{4,5}$' -e '^(ssh|ecdsa)-[a-z0-9-]+ [A-Za-z0-9/-]+ ?.*$')
 
 	if [[ $header =~ ^-{5}BEGIN\ [A-Z0-9\ ]+-{5}$ ]] ; then
 		# PEM
