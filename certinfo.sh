@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# certinfo.sh v2.4
+# certinfo.sh v2.5
 # by Ricardo Branco
 #
 # MIT License
@@ -25,15 +25,15 @@ ssh_keygen=${ssh_keygen:-$(type -P ssh-keygen)}
 
 exit_error ()
 {
-        echo "$@" >&2
-        exit 1
+	echo "$@" >&2
+	exit 1
 }
 
 exit_usage ()
 {
-	cat <<- EOF
+	cat >&2 <<- EOF
 		Usage: ${0##*/} FILE [PASSWORD|PASSWORD_FILE]
-		Usage: ${0##*/} -h [https://]SERVER[:PORT]
+		Usage: ${0##*/} -h [SCHEME://]SERVER [PORT]
 		Usage: ${0##*/} CRL [CAfile]
 	EOF
 	exit 1
@@ -204,36 +204,58 @@ print_sshpubkey ()
 
 print_server ()
 {
-	local host starttls
+	local host="${1##*//}"
+	local port="$2"
+	local proto
 
-	# Strip the initial URL scheme & any trailing slashes, if present
-	host=$(echo "$1" | sed -re 's%^[a-z][a-z0-9\.-]+://%%' -e 's%/*$%%')
-	# Get port
-	[[ $host =~ : ]] && port=${host##*:}
-	# Strip port from host
-	host=${host%:*}
-	# Use port 443 if not specified
-	# XXX: Get port from scheme?
-	port=${port:-"443"}
-
-	case "$port" in
-		21|ftp)
-			starttls="ftp" ;;
-		25|587|smtp)
-			starttls="smtp" ;;
-		110|pop3)
-			starttls="pop3" ;;
-		143|imap)
-			starttls="imap" ;;
-	esac
-
-	if [ -n "$starttls" ] ; then
-		starttls="-starttls $starttls"
+	if [[ $1 =~ :// ]] ; then
+		proto="${1%%://*}"
 	fi
 
-	[[ ! $host =~ ^[0-9] ]] && servername="-servername $host"
+	# See openssl-s_client(1) for supported protocols
+	if [ -z "$proto" ] ; then
+		case "$port" in
+			563)	proto=nttp ;;
+			587)	proto=smtp ;;
+			636)	proto=ldap ;;
+			990)	proto=ftp ;;
+			993)	proto=imap ;;
+			995)	proto=pop3 ;;
+			3306)	proto=mysql ;;
+			4190)	proto=sieve ;;
+			5222)	proto=xmpp ;;
+			5269)	proto=xmpp-server ;;
+			5432)	proto=postgres ;;
+			6697)	proto=irc ;;
+		esac
+	fi
+	if [ -z "$port" ] ; then
+		case "$proto" in
+			https)		port=443; proto= ;;
+			nntp|nttps)	port=563; proto=nttp ;;
+			smtp)		port=587 ;;
+			ldap|ldaps)	port=636 ;;
+			ftp|ftps)	port=990; proto=ftp ;;
+			imap|imaps)	port=993; proto=imap ;;
+			pop3|pop3s)	port=995; proto=pop3 ;;
+			mysql)		port=3306 ;;
+			sieve)		port=4190 ;;
+			xmpp)		port=5222 ;;
+			xmpp-server)	port=5269 ;;
+			postgres)	port=5432 ;;
+			irc)		port=6697 ;;
+			"")		port=443 ;;
+		esac
+	fi
 
-	echo QUIT | $openssl s_client -showcerts $starttls "$servername" -connect "${host}:$port" 2>/dev/null | sed -rne '/^-+BEGIN/,/^-+END/p'
+	local starttls=""
+	if [ -n "$proto" ] ; then
+		starttls="-starttls $proto"
+	fi
+
+	[[ ! $host =~ ^[0-9:] ]] && servername="-servername $host"
+
+	echo QUIT | $openssl s_client -showcerts $starttls $servername -connect "${host}:$port" 2>/dev/null | sed -rne '/^-+BEGIN/,/^-+END/p'
 }
 
 detect_file ()
@@ -303,8 +325,8 @@ detect_data ()
 			$openssl pkcs8 -outform PEM -inform DER -in "$1" -passin "pass:$2" > "$tmpfile" 2>/dev/null
 		fi
 		if [ $? -eq 0 ] ; then
-                        command="print_privatekey"
-                fi
+			command="print_privatekey"
+		fi
 	fi
 
 	if [ -n "$command" ] ; then
@@ -362,14 +384,18 @@ jks2pkcs12 ()
 	rm -f "$tmpfile"
 }
 
-if [[ $# -ne 1 && $# -ne 2 ]] ; then
+if [[ $1 = "-h" ]] ; then
+	shift
+	if [[ $# -eq 0 || $# -gt 2 ]] ; then
+		exit_usage
+	fi
+	print_certificate <(print_server "$@")
+	exit
+elif [[ $1 =~ ^- ]] ; then
 	exit_usage
 fi
 
-if [[ $1 = "-h" && $# -eq 2 ]] ; then
-	print_server "$2"
-	exit
-elif [[ $1 =~ ^- ]] ; then
+if [[ $# -ne 1 && $# -ne 2 ]] ; then
 	exit_usage
 fi
 
