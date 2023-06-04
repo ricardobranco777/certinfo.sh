@@ -36,26 +36,6 @@ exit_usage ()
 		Usage: ${0##*/} -h [https://]SERVER[:PORT]
 		Usage: ${0##*/} CRL [CAfile]
 	EOF
-	if [ -n "$openssl" ] ; then
-		echo "  OpenSSL version: $($openssl version)"
-	fi
-	if [ -n "$keytool" ] ; then
-		echo "  Keytool origin: $($(dirname $keytool)/java -version 2>&1 | sed -ne 2p)"
-	fi
-	if [ -z "$certtool" -a -z "$openssl" ] ; then
-		if [ -f /etc/debian_version ] ; then
-			echo "  Install certtool with: apt-get install gnutls-bin"
-		elif [ -f /etc/redhat-release ] ; then
-			echo "  Install certtool with: yum install gnutls-utils"
-		fi
-	fi
-	if [ -z "$certutil" -o -z "$pk12util" ] ; then
-		if [ -f /etc/debian_version ] ; then
-			echo "  Install certutil with: apt-get install libnss3-tools"
-		elif [ -f /etc/redhat-release ] ; then
-			echo "  Install certutil with: yum install nss-tools"
-		fi
-	fi
 	exit 1
 }
 
@@ -64,7 +44,7 @@ check_error ()
 	local binaries
 
 	for bin ; do
-		if [[ -x $(eval echo \$$bin) ]] ; then
+		if [[ -x $(eval echo \$"$bin") ]] ; then
 			binaries="$binaries $bin"
 		fi
 	done
@@ -76,7 +56,7 @@ check_error ()
 # The openssl x509, req and crl commands just print the first certificate or CRL and doesn't work with concatenated content.
 print_openssl ()
 {
-	cat "$2" | tr -d '\r' | \
+	tr -d '\r' < "$2" | \
 	awk -v command="$openssl $1" '{
 		s = s "\n" $0
 		if ($0 ~ /^-{5}BEGIN /) {
@@ -212,7 +192,7 @@ print_pkcs12 ()
 		if [ $# -eq 2 ] ; then
 			if [ -f "$2" ] ; then
 				$keytool -list -v -storetype PKCS12 -keystore "$1" -storepass:file "$2" || \
-				$keytool -list -v -storetype PKCS12 -keystore "$1" -storepass $(< "$2")
+				$keytool -list -v -storetype PKCS12 -keystore "$1" -storepass "$(< "$2")"
 			else
 				$keytool -list -v -storetype PKCS12 -keystore "$1" -storepass "$2"
 			fi
@@ -268,7 +248,7 @@ print_publickey ()
 
 	# XXX: There's a bug in the dsa & ec commands returns 1 when -noout is used
 	for alg in rsa "rsa -RSAPublicKey_in" dsa ec ; do
-		data=$($openssl $alg -text -pubin -in "$@" 2>/dev/null | sed -r '/^-{5}BEGIN/,/^-{5}BEGIN/d')
+		data=$($openssl "$alg" -text -pubin -in "$@" 2>/dev/null | sed -r '/^-{5}BEGIN/,/^-{5}BEGIN/d')
 		[ -n "$data" ] && break
 	done
 
@@ -307,14 +287,14 @@ print_sshpubkey ()
 
 	# Create temporary file with secure permissions
 	umask 077
-	trap "rm -f $tmpfile" EXIT HUP INT QUIT TERM
+	trap 'rm -f $tmpfile' EXIT HUP INT QUIT TERM
 	tmpfile=$(mktemp)
 
-	$ssh_keygen -e -m pkcs8 -f "$1" > $tmpfile
+	$ssh_keygen -e -m pkcs8 -f "$1" > "$tmpfile"
 
-	print_publickey $tmpfile
+	print_publickey "$tmpfile"
 
-	rm -f $tmpfile
+	rm -f "$tmpfile"
 }
 
 print_server ()
@@ -332,7 +312,7 @@ print_server ()
 	port=${port:-"443"}
 
 	case "$port" in
-		21|smtp)
+		21|ftp)
 			starttls="ftp" ;;
 		25|587|smtp)
 			starttls="smtp" ;;
@@ -354,9 +334,9 @@ print_server ()
 	[[ ! $host =~ ^[0-9] ]] && servername="-servername $host"
 
 	if [ -n "$openssl" ] ; then
-		echo QUIT | $openssl s_client -showcerts $starttls $servername -connect "${host}:$port" 2>/dev/null
+		echo QUIT | $openssl s_client -showcerts $starttls "$servername" -connect "${host}:$port" 2>/dev/null
 	elif [ -n "$certtool" ] ; then
-		echo QUIT | $(dirname $certtool)/gnutls-cli --insecure --print-cert "$host" -p "$port"
+		echo QUIT | "$(dirname "$certtool")"/gnutls-cli --insecure --print-cert "$host" -p "$port"
 	else
 		check_error openssl gnutls-cli
 	fi | sed -rne '/^-+BEGIN/,/^-+END/p'
@@ -366,7 +346,7 @@ detect_file ()
 {
 	local header
 
-	header=$(cat "$1" | tr -d '\r\0' | grep -E -m1 -e '^-{4,5} ?BEGIN [A-Z0-9 ]+ ?-{4,5}$' -e '^(ssh|ecdsa)-[a-z0-9-]+ [A-Za-z0-9/-]+ ?.*$')
+	header=$(tr -d '\r\0' < "$1" | grep -E -m1 -e '^-{4,5} ?BEGIN [A-Z0-9 ]+ ?-{4,5}$' -e '^(ssh|ecdsa)-[a-z0-9-]+ [A-Za-z0-9/-]+ ?.*$')
 
 	if [[ $header =~ ^-{5}BEGIN\ [A-Z0-9\ ]+-{5}$ ]] ; then
 		# PEM
@@ -391,12 +371,12 @@ detect_data ()
 
 	# Create temporary file with secure permissions
 	umask 077
-	trap "rm -f $tmpfile" EXIT HUP INT QUIT TERM
+	trap 'rm -f $tmpfile' EXIT HUP INT QUIT TERM
 	tmpfile=$(mktemp)
 
 	if [ -n "$openssl" ] ; then
 		for cmd in x509 req crl pkcs7 dhparam dsaparam ecparam rsa ; do
-			$openssl $cmd -outform PEM -inform DER -in "$1" > $tmpfile 2>/dev/null || continue
+			$openssl $cmd -outform PEM -inform DER -in "$1" > "$tmpfile" 2>/dev/null || continue
 			case $cmd in
 				x509)
 					command="print_certificate" ;;
@@ -417,7 +397,7 @@ detect_data ()
 		done
 		if [ -z "$command" ] ; then
 			for alg in rsa dsa ec ; do
-				if $openssl $alg -outform PEM -inform DER -pubin -in "$1" > $tmpfile 2>/dev/null ; then
+				if $openssl $alg -outform PEM -inform DER -pubin -in "$1" > "$tmpfile" 2>/dev/null ; then
 					command="print_publickey"
 					break
 				fi
@@ -425,15 +405,15 @@ detect_data ()
 		fi
 		if [ -z "$command" ] ; then
 			if [ -f "$2" ] ; then
-				$openssl pkcs8 -outform PEM -inform DER -in "$1" -passin "file:$2" > $tmpfile 2>/dev/null
+				$openssl pkcs8 -outform PEM -inform DER -in "$1" -passin "file:$2" > "$tmpfile" 2>/dev/null
 			else
-				$openssl pkcs8 -outform PEM -inform DER -in "$1" -passin "pass:$2" > $tmpfile 2>/dev/null
+				$openssl pkcs8 -outform PEM -inform DER -in "$1" -passin "pass:$2" > "$tmpfile" 2>/dev/null
 			fi
 			[ $? -eq 0 ] && command="print_privatekey"
 		fi
 	elif [ -n "$certtool" ] ; then
 		for cmd in certificate-info crq-info crl-info ; do
-			$certtool --$cmd --inraw --infile "$1" > $tmpfile 2>/dev/null || continue
+			$certtool --$cmd --inraw --infile "$1" > "$tmpfile" 2>/dev/null || continue
 			case $cmd in
 				certificate-info)
 					command="print_certificate" ;;
@@ -450,14 +430,14 @@ detect_data ()
 
 	if [ -n "$command" ] ; then
 		shift
-		$command $tmpfile "$@"
+		$command "$tmpfile" "$@"
 		exit $?
 	else
 		print_pkcs12 "$@" && exit
 		print_privatekey "$@" && exit
 	fi
 
-	rm -f $tmpfile
+	rm -f "$tmpfile"
 }
 
 # Print Java KeyStore
@@ -469,7 +449,7 @@ print_keystore ()
 	if [ $# -eq 2 ] ; then
 		if [ -f "$2" ] ; then
 			$keytool -list -v -keystore "$1" -storepass:file "$2" || \
-			$keytool -list -v -keystore "$1" -storepass $(< "$2")
+			$keytool -list -v -keystore "$1" -storepass "$(< "$2")"
 		else
 			$keytool -list -v -keystore "$1" -storepass "$2"
 		fi
@@ -490,11 +470,11 @@ jks2pkcs12 ()
 	umask 077
 	# Create temp file
 	tmpfile=$(mktemp -u)
-	trap "/bin/rm -f $tmpfile" EXIT HUP INT QUIT TERM
+	trap '/bin/rm -f $tmpfile' EXIT HUP INT QUIT TERM
 
 	if [ -f "$2" ] ; then
 		$keytool -importkeystore -noprompt -srckeystore "$1" -srcstoretype JKS -destkeystore "$tmpfile" -deststoretype PKCS12 -srcstorepass:file "$2" -deststorepass file:"$2" || \
-		$keytool -importkeystore -noprompt -srckeystore "$1" -srcstoretype JKS -destkeystore "$tmpfile" -deststoretype PKCS12 -srcstorepass $(< "$2") -deststorepass $(< "$2") || exit 1
+		$keytool -importkeystore -noprompt -srckeystore "$1" -srcstoretype JKS -destkeystore "$tmpfile" -deststoretype PKCS12 -srcstorepass "$(< "$2")" -deststorepass "$(< "$2")" || exit 1
 	else
 		$keytool -importkeystore -noprompt -srckeystore "$1" -srcstoretype JKS -destkeystore "$tmpfile" -deststoretype PKCS12 -srcstorepass "$2" -deststorepass "$2" || exit 1
 	fi
@@ -505,11 +485,11 @@ jks2pkcs12 ()
 	rm -f "$tmpfile"
 }
 
-if [ $# -ne 1 -a $# -ne 2 ] ; then
+if [[ $# -ne 1 && $# -ne 2 ]] ; then
 	exit_usage
 fi
 
-if [ "$1" == "-h" -a $# -eq 2 ] ; then
+if [[ $1 = "-h" && $# -eq 2 ]] ; then
 	print_server "$2"
 	exit
 elif [[ $1 =~ ^- ]] ; then
