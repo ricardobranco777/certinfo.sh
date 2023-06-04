@@ -7,9 +7,6 @@
 #
 # This script parses PEM or DER certificates, requests, CRL's, PKCS#12, PKCS#7 & PKCS#8 files, Java keystores, NSS databases,
 #   Diffie-Hellman / DSA / Elliptic Curve parameters and private & public keys (from OpenSSH too).
-# It uses OpenSSL for most operations (unless the openssl variable is empty), otherwise it uses GnuTLS' certtool(1),
-#   which comes with gnutls-bin package on Debian-based systems and gnutls-utils on RedHat-based.
-# Note: If the certtool variable is empty, keytool is used instead.
 # To view Java keystores, either Oracle Java or OpenJDK must be installed.
 # To view NSS databases we use the certutil command (libnss3-tools on Debian-based systems, nss-tools on RedHat-based).
 # In the case of PKCS#12, PKCS#7 files, Java keystores and NSS databases, the 2nd argument must be a password (or a file).
@@ -18,9 +15,6 @@
 # OpenSSL
 [[ -z $openssl && ${openssl-set} ]] && \
 openssl=${openssl:-$(type -P openssl)}
-# GnuTLS
-[[ -z $certtool && ${certtool-set} ]] && \
-certtool=${certtool:-$(type -P certtool)}
 # Oracle Java / OpenJDK tool
 keytool=${keytool:-$(type -P keytool)}
 # NSS tools
@@ -28,6 +22,12 @@ certutil=${certutil:-$(type -P certutil)}
 pk12util=${pk12util:-$(type -P pk12util)}
 # OpenSSH
 ssh_keygen=${ssh_keygen:-$(type -P ssh-keygen)}
+
+exit_error ()
+{
+        echo "$@" >&2
+        exit 1
+}
 
 exit_usage ()
 {
@@ -37,20 +37,6 @@ exit_usage ()
 		Usage: ${0##*/} CRL [CAfile]
 	EOF
 	exit 1
-}
-
-check_error ()
-{
-	local binaries
-
-	for bin ; do
-		if [[ -x $(eval echo \$"$bin") ]] ; then
-			binaries="$binaries $bin"
-		fi
-	done
-
-	echo "ERROR: Missing binaries: $binaries" >&2
-	exit_usage
 }
 
 # The openssl x509, req and crl commands just print the first certificate or CRL and doesn't work with concatenated content.
@@ -71,88 +57,45 @@ print_openssl ()
 
 print_certificate ()
 {
-	if [ -n "$openssl" ] ; then
-		print_openssl "x509 -text -noout" "$1"
-	elif [ -n "$certtool" ] ; then
-		$certtool --certificate-info --infile "$1"
-	elif [ -n "$keytool" ] ; then
-		$keytool -printcert -v -file "$1"
-	else
-		check_error openssl certtool keytool
-	fi
+	print_openssl "x509 -text -noout" "$1"
 }
 
 print_certrequest ()
 {
-	if [ -n "$openssl" ] ; then
-		print_openssl "req -text -noout" "$1"
-	elif [ -n "$certtool" ] ; then
-		$certtool --crq-info --infile "$1"
-	elif [ -n "$keytool" ] ; then
-		$keytool -printcertreq -v -file "$1"
-	else
-		check_error openssl certtool keytool
-	fi
+	print_openssl "req -text -noout" "$1"
 }
 
 print_crl ()
 {
-	if [ -n "$openssl" ] ; then
-		if [ $# -eq 2 ] ; then
-			print_openssl "crl -text -noout -CAfile $2" "$1"
-		else
-			print_openssl "crl -text -noout" "$1"
-		fi
-	elif [ -n "$certtool" ] ; then
-		if [ $# -eq 2 ] ; then
-			$certtool --crl-info --infile "$1" --verify-crl --load-ca-certificate "$2"
-		else
-			$certtool --crl-info --infile "$1"
-		fi
-	elif [ -n "$keytool" ] ; then
-		$keytool -printcrl -v -file "$1"
+	if [ $# -eq 2 ] ; then
+		print_openssl "crl -text -noout -CAfile $2" "$1"
 	else
-		check_error openssl certtool keytool
+		print_openssl "crl -text -noout" "$1"
 	fi
 }
 
 print_dhparam ()
 {
-	[ -z "$openssl" ] && \
-		check_error openssl
-
 	$openssl dhparam -text -noout -in "$1"
 }
 
 print_dsaparam ()
 {
-	[ -z "$openssl" ] && \
-		check_error openssl
-
 	$openssl dsaparam -text -noout -in "$1"
 }
 
 print_ecparam ()
 {
-	[ -z "$openssl" ] && \
-		check_error openssl
-
 	$openssl ecparam -text -noout -in "$1"
 }
 
 print_pkcs7 ()
 {
-	[ -z "$openssl" ] && \
-		check_error openssl
-
 	$openssl pkcs7 -text -print_certs -in "$1"
 }
 
 print_pkcs8 ()
 {
-	[ -z "$openssl" ] && \
-		check_error openssl
-
 	if [ -f "$2" ] ; then
 		$openssl pkcs8 -in "$1" -passin "file:$2"
 	else
@@ -162,45 +105,14 @@ print_pkcs8 ()
 
 print_pkcs12 ()
 {
-	if [ -n "$openssl" ] ; then
-		if [ $# -eq 2 ] ; then
-			if [ -f "$2" ] ; then
-				$openssl pkcs12 -info -nodes -in "$1" -passin file:"$2"
-			else
-				$openssl pkcs12 -info -nodes -in "$1" -passin pass:"$2"
-			fi
+	if [ $# -eq 2 ] ; then
+		if [ -f "$2" ] ; then
+			$openssl pkcs12 -info -nodes -in "$1" -passin file:"$2"
 		else
-			$openssl pkcs12 -info -nodes -in "$1"
-		fi
-	elif [ -n "$certtool" ] ; then
-		if [ $# -eq 2 ] ; then
-			$certtool --inraw --p12-info --infile "$1" --password "$2"
-		else
-			$certtool --inraw --p12-info --infile "$1"
-		fi
-	elif [ -n "$pk12util" ] ; then
-		if [ $# -eq 2 ] ; then
-			if [ -f "$2" ] ; then
-				$pk12util -l "$1" -w "$2"
-			else
-				$pk12util -l "$1" -W "$2"
-			fi
-		else
-			$pk12util -l "$1"
-		fi
-	elif [ -n "$keytool" ] ; then
-		if [ $# -eq 2 ] ; then
-			if [ -f "$2" ] ; then
-				$keytool -list -v -storetype PKCS12 -keystore "$1" -storepass:file "$2" || \
-				$keytool -list -v -storetype PKCS12 -keystore "$1" -storepass "$(< "$2")"
-			else
-				$keytool -list -v -storetype PKCS12 -keystore "$1" -storepass "$2"
-			fi
-		else
-			$keytool -list -v -storetype PKCS12 -keystore "$1"
+			$openssl pkcs12 -info -nodes -in "$1" -passin pass:"$2"
 		fi
 	else
-		check_error openssl certtool pk12util keytool
+		$openssl pkcs12 -info -nodes -in "$1"
 	fi
 }
 
@@ -208,8 +120,7 @@ print_nssdb ()
 {
 	local dir prefix
 
-	[ -z "$certutil" ] && \
-		check_error certutil
+	[ -z "$certutil" ] && exit_error "Missing command: certutil"
 
 	dir=$(dirname "$1")
 
@@ -243,9 +154,6 @@ print_publickey ()
 {
 	local data
 
-	[ -z "$openssl" ] && \
-		check_error openssl
-
 	# XXX: There's a bug in the dsa & ec commands returns 1 when -noout is used
 	for alg in rsa "rsa -RSAPublicKey_in" dsa ec ; do
 		data=$($openssl "$alg" -text -pubin -in "$@" 2>/dev/null | sed -r '/^-{5}BEGIN/,/^-{5}BEGIN/d')
@@ -258,9 +166,6 @@ print_publickey ()
 print_privatekey ()
 {
 	local data
-
-	[ -z "$openssl" ] && \
-		check_error openssl
 
 	# XXX: There's a bug in the dsa & ec commands returns 1 when -noout is used
 	for alg in rsa dsa ec ; do
@@ -323,23 +228,12 @@ print_server ()
 	esac
 
 	if [ -n "$starttls" ] ; then
-		if [ -n "$openssl" ] ; then
-			starttls="-starttls $starttls"
-		elif [ -n "$certtool" ] ; then
-			# XXX: GnuTLS --starttls option sucks
-			starttls="--starttls $starttls"
-		fi
+		starttls="-starttls $starttls"
 	fi
 
 	[[ ! $host =~ ^[0-9] ]] && servername="-servername $host"
 
-	if [ -n "$openssl" ] ; then
-		echo QUIT | $openssl s_client -showcerts $starttls "$servername" -connect "${host}:$port" 2>/dev/null
-	elif [ -n "$certtool" ] ; then
-		echo QUIT | "$(dirname "$certtool")"/gnutls-cli --insecure --print-cert "$host" -p "$port"
-	else
-		check_error openssl gnutls-cli
-	fi | sed -rne '/^-+BEGIN/,/^-+END/p'
+	echo QUIT | $openssl s_client -showcerts $starttls "$servername" -connect "${host}:$port" 2>/dev/null | sed -rne '/^-+BEGIN/,/^-+END/p'
 }
 
 detect_file ()
@@ -374,58 +268,43 @@ detect_data ()
 	trap 'rm -f $tmpfile' EXIT HUP INT QUIT TERM
 	tmpfile=$(mktemp)
 
-	if [ -n "$openssl" ] ; then
-		for cmd in x509 req crl pkcs7 dhparam dsaparam ecparam rsa ; do
-			$openssl $cmd -outform PEM -inform DER -in "$1" > "$tmpfile" 2>/dev/null || continue
-			case $cmd in
-				x509)
-					command="print_certificate" ;;
-				req)
-					command="print_certrequest" ;;
-				crl)
-					command="print_crl" ;;
-				pkcs7)
-					command="print_pkcs7" ;;
-				dhparam)
-					command="print_dhparam" ;;
-				dsaparam)
-					command="print_dsaparam" ;;
-				ecparam)
-					command="print_ecparam" ;;
-			esac
-			break
-		done
-		if [ -z "$command" ] ; then
-			for alg in rsa dsa ec ; do
-				if $openssl $alg -outform PEM -inform DER -pubin -in "$1" > "$tmpfile" 2>/dev/null ; then
-					command="print_publickey"
-					break
-				fi
-			done
-		fi
-		if [ -z "$command" ] ; then
-			if [ -f "$2" ] ; then
-				$openssl pkcs8 -outform PEM -inform DER -in "$1" -passin "file:$2" > "$tmpfile" 2>/dev/null
-			else
-				$openssl pkcs8 -outform PEM -inform DER -in "$1" -passin "pass:$2" > "$tmpfile" 2>/dev/null
+	for cmd in x509 req crl pkcs7 dhparam dsaparam ecparam rsa ; do
+		$openssl $cmd -outform PEM -inform DER -in "$1" > "$tmpfile" 2>/dev/null || continue
+		case $cmd in
+			x509)
+				command="print_certificate" ;;
+			req)
+				command="print_certrequest" ;;
+			crl)
+				command="print_crl" ;;
+			pkcs7)
+				command="print_pkcs7" ;;
+			dhparam)
+				command="print_dhparam" ;;
+			dsaparam)
+				command="print_dsaparam" ;;
+			ecparam)
+				command="print_ecparam" ;;
+		esac
+		break
+	done
+	if [ -z "$command" ] ; then
+		for alg in rsa dsa ec ; do
+			if $openssl $alg -outform PEM -inform DER -pubin -in "$1" > "$tmpfile" 2>/dev/null ; then
+				command="print_publickey"
+				break
 			fi
-			[ $? -eq 0 ] && command="print_privatekey"
-		fi
-	elif [ -n "$certtool" ] ; then
-		for cmd in certificate-info crq-info crl-info ; do
-			$certtool --$cmd --inraw --infile "$1" > "$tmpfile" 2>/dev/null || continue
-			case $cmd in
-				certificate-info)
-					command="print_certificate" ;;
-				crq-info)
-					command="print_certrequest" ;;
-				crl-info)
-					command="print_crl" ;;
-			esac
-			break
 		done
-	else
-		check_error openssl certtool
+	fi
+	if [ -z "$command" ] ; then
+		if [ -f "$2" ] ; then
+			$openssl pkcs8 -outform PEM -inform DER -in "$1" -passin "file:$2" > "$tmpfile" 2>/dev/null
+		else
+			$openssl pkcs8 -outform PEM -inform DER -in "$1" -passin "pass:$2" > "$tmpfile" 2>/dev/null
+		fi
+		if [ $? -eq 0 ] ; then
+                        command="print_privatekey"
+                fi
 	fi
 
 	if [ -n "$command" ] ; then
@@ -443,8 +322,7 @@ detect_data ()
 # Print Java KeyStore
 print_keystore ()
 {
-	[ -z "$keytool" ] && \
-		check_error keytool
+	[ -z "$keytool" ] && exit_error "Missing command: keytool"
 
 	if [ $# -eq 2 ] ; then
 		if [ -f "$2" ] ; then
@@ -463,8 +341,7 @@ jks2pkcs12 ()
 {
 	local tmpfile
 
-	[ -z "$keytool" ] && \
-		check_error keytool
+	[ -z "$keytool" ] && exit_error "Missing command: keytool"
 
 	# Secure permissions
 	umask 077
