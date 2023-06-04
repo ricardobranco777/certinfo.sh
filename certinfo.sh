@@ -255,6 +255,7 @@ print_server ()
 
 	[[ ! $host =~ ^[0-9:] ]] && servername="-servername $host"
 
+	# shellcheck disable=SC2086
 	echo QUIT | $openssl s_client -showcerts $starttls $servername -connect "${host}:$port" 2>/dev/null | sed -rne '/^-+BEGIN/,/^-+END/p'
 }
 
@@ -324,6 +325,7 @@ detect_data ()
 		else
 			$openssl pkcs8 -outform PEM -inform DER -in "$1" -passin "pass:$2" > "$tmpfile" 2>/dev/null
 		fi
+		# shellcheck disable=SC2181
 		if [ $? -eq 0 ] ; then
 			command="print_privatekey"
 		fi
