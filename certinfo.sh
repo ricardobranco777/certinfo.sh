@@ -212,23 +212,6 @@ print_server ()
 		proto="${1%%://*}"
 	fi
 
-	# See openssl-s_client(1) for supported protocols
-	if [ -z "$proto" ] ; then
-		case "$port" in
-			563)	proto=nttp ;;
-			587)	proto=smtp ;;
-			636)	proto=ldap ;;
-			990)	proto=ftp ;;
-			993)	proto=imap ;;
-			995)	proto=pop3 ;;
-			3306)	proto=mysql ;;
-			4190)	proto=sieve ;;
-			5222)	proto=xmpp ;;
-			5269)	proto=xmpp-server ;;
-			5432)	proto=postgres ;;
-			6697)	proto=irc ;;
-		esac
-	fi
 	if [ -z "$port" ] ; then
 		case "$proto" in
 			https)		port=443; proto= ;;
@@ -248,15 +231,10 @@ print_server ()
 		esac
 	fi
 
-	local starttls=""
-	if [ -n "$proto" ] ; then
-		starttls="-starttls $proto"
-	fi
-
 	[[ ! $host =~ ^[0-9:] ]] && servername="-servername $host"
 
 	# shellcheck disable=SC2086
-	echo QUIT | $openssl s_client -showcerts $starttls $servername -connect "${host}:$port" 2>/dev/null | sed -rne '/^-+BEGIN/,/^-+END/p'
+	echo QUIT | $openssl s_client -showcerts $servername -connect "${host}:$port" 2>/dev/null | sed -rne '/^-+BEGIN/,/^-+END/p'
 }
 
 detect_file ()
