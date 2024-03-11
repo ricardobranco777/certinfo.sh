@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #
 # certinfo.sh v2.5
 # by Ricardo Branco
